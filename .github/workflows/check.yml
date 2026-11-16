@@ -9,7 +9,7 @@ name: VPN Gate Node Check
 
 on:
   schedule:
-    - cron: '17 * * * *'
+    - cron: '17,47 * * * *'
   workflow_dispatch:
     inputs:
       max_nodes:
@@ -19,7 +19,7 @@ on:
       concurrency:
         description: '并发数（建议 16–32）'
         required: false
-        default: '32'
+        default: '16'
       timeout:
         description: '单节点检测超时（秒）'
         required: false
@@ -67,10 +67,14 @@ jobs:
       - name: Run pipeline
         env:
           CHECK_WORKER: "https://${{ secrets.DOMAIN }}/check?sstp=vpn:vpn@"
-          CHECK_CONCURRENCY: ${{ github.event.inputs.concurrency || '32' }}
+          CHECK_CONCURRENCY: ${{ github.event.inputs.concurrency || '16' }}
           CHECK_TIMEOUT: ${{ github.event.inputs.timeout || '25' }}
           MAX_CHECK_NODES: ${{ github.event.inputs.max_nodes || '0' }}
-          MIN_SUCCESS_RATIO: '0'
+          MIN_SUCCESS_RATIO: '0.05'
+          HOSTS_ENTRY: 'www.mfyx.cn:443'
+          OPTIMAL_API: ''
+          MAX_RESIDENTIAL_PER_COUNTRY: '5'
+          MAX_DATACENTER_PER_COUNTRY: '0'
         run: python vpngate.py
 
       - name: Ensure GitHub Pages is enabled
@@ -129,3 +133,4 @@ jobs:
         run: |
           echo "订阅地址：https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/nodes.txt"
           echo "仪表盘：  https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+
