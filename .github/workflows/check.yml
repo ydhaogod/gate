@@ -122,7 +122,7 @@ jobs:
           
           selected = []
           counts = {}
-          for code, limit in [('US', 2), ('JP', 1), ('SG', 1)]:
+          for code, limit in [('US', 3), ('JP', 3), ('SG', 3)]:
               if code == 'SG' and counts.get('JP'):
                   continue
               candidates = [n for n in data['countries'].get(code, {}).get('nodes', [])
@@ -151,7 +151,7 @@ jobs:
                     'note':'Free shared backups. Checker duration is not client RTT; stable sub-400ms is not guaranteed.'}
           data['subscription_policy'] = policy
           (root / 'data.json').write_text(json.dumps(data, ensure_ascii=False))
-          summary = f"\n### Residential backup policy\n\nUS first (max 2), JP or SG (max 1); other countries excluded.\n\nPublished: {counts}. Three successful checker samples per node. These checks do not guarantee client RTT below 400 ms.\n"
+          summary = f"\n### Residential backup policy\n\nUS first (max 3), JP or SG (max 3); distinct exit servers, other countries excluded.\n\nPublished: {counts}. Three successful checker samples per node. These checks do not guarantee client RTT below 400 ms.\n"
           print(summary)
           if os.environ.get('GITHUB_STEP_SUMMARY'):
               with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
