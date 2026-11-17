@@ -74,30 +74,88 @@ jobs:
           CHECK_TIMEOUT: ${{ github.event.inputs.timeout || '25' }}
           MAX_CHECK_NODES: ${{ github.event.inputs.max_nodes || '0' }}
           MIN_SUCCESS_RATIO: '0.05'
-          HOSTS_ENTRY: '172.64.150.84:443'
+          HOSTS_ENTRY: '104.19.2.253:2096'
           OPTIMAL_API: ''
           MAX_RESIDENTIAL_PER_COUNTRY: '3'
           MAX_DATACENTER_PER_COUNTRY: '0'
         run: python vpngate.py
 
-      - name: Filter slow residential subscription nodes
+      - name: Select repeat-checked US and Asian residential backups
+        env:
+          CHECK_WORKER: "https://${{ secrets.DOMAIN }}/check?sstp=vpn:vpn@"
         run: |
           python - <<'PY'
+          import concurrent.futures
           import json
+          import os
           from pathlib import Path
+          import statistics
+          from urllib.parse import quote
+          import requests
+          
           root = Path('public')
           data = json.loads((root / 'data.json').read_text())
-          allowed = set()
-          for country in data['countries'].values():
-              for node in country['nodes']:
-                  delay = node.get('latency_ms')
-                  if node.get('residential') == 'residential' and isinstance(delay, (int, float)) and 0 < delay <= 5000:
-                      allowed.add(f"sstp://vpn:vpn@{node['host']}:{node['port']}")
-          lines = [line for line in (root / 'nodes.txt').read_text().splitlines() if line.partition('$')[2] in allowed][:12]
-          if not lines:
-              raise SystemExit('No residential nodes passed quality checks; keep previous deployment')
+          worker = os.environ['CHECK_WORKER']
+          entry = '104.19.2.253:2096'
+          preferred_japan = 'vpn864205373.opengw.net'
+          
+          def verify(node):
+              session = requests.Session()
+              values = [node['latency_ms']]
+              try:
+                  for _ in range(2):
+                      response = session.get(worker + quote(f"{node['host']}:{node['port']}", safe=''), timeout=15)
+                      response.raise_for_status()
+                      result = response.json()
+                      delay = result.get('responseTime')
+                      exit_info = result.get('exit') or {}
+                      if not result.get('success') or not isinstance(delay, (int, float)) or not 0 < delay <= 5000:
+                          return None
+                      if str(exit_info.get('country_code', '')).upper() != node['country_code']:
+                          return None
+                      values.append(delay)
+                  if max(values) - min(values) > 1500:
+                      return None
+              except (requests.RequestException, ValueError, TypeError):
+                  return None
+              return {**node, 'repeat_checker_ms': values, 'repeat_median_ms': statistics.median(values)}
+          
+          selected = []
+          counts = {}
+          for code, limit in [('US', 2), ('JP', 1), ('SG', 1)]:
+              if code == 'SG' and counts.get('JP'):
+                  continue
+              candidates = [n for n in data['countries'].get(code, {}).get('nodes', [])
+                            if n.get('residential') == 'residential' and isinstance(n.get('latency_ms'), (int, float))
+                            and 0 < n['latency_ms'] <= 5000
+                            and str((n.get('exit') or {}).get('country_code', '')).upper() == code]
+              candidates.sort(key=lambda n: (n['host'] != preferred_japan if code == 'JP' else False, n['latency_ms']))
+              with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+                  stable = [n for n in pool.map(verify, candidates[:6]) if n]
+              stable.sort(key=lambda n: (n['host'] != preferred_japan if code == 'JP' else False, n['repeat_median_ms']))
+              chosen = stable[:limit]
+              counts[code] = len(chosen)
+              selected.extend(chosen)
+          
+          if not selected:
+              raise SystemExit('No requested-country residential backups passed repeat checks; retain previous deployment')
+          names = {'US': '美国', 'JP': '日本', 'SG': '新加坡'}
+          numbered = {}
+          lines = []
+          for node in selected:
+              code = node['country_code']
+              numbered[code] = numbered.get(code, 0) + 1
+              lines.append(f"{entry}#{names[code]}-住宅备用-{numbered[code]:02d}$sstp://vpn:vpn@{node['host']}:{node['port']}")
           (root / 'nodes.txt').write_text('\n'.join(lines) + '\n')
-          print(f'Published {len(lines)} residential nodes: max 3/country, checker latency <= 5000 ms')
+          policy = {'countries':counts, 'nodes':len(lines), 'checker_repeats':3,
+                    'note':'Free shared backups. Checker duration is not client RTT; stable sub-400ms is not guaranteed.'}
+          data['subscription_policy'] = policy
+          (root / 'data.json').write_text(json.dumps(data, ensure_ascii=False))
+          summary = f"\n### Residential backup policy\n\nUS first (max 2), JP or SG (max 1); other countries excluded.\n\nPublished: {counts}. Three successful checker samples per node. These checks do not guarantee client RTT below 400 ms.\n"
+          print(summary)
+          if os.environ.get('GITHUB_STEP_SUMMARY'):
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
+                  stream.write(summary)
           PY
 
       - name: Ensure GitHub Pages is enabled
