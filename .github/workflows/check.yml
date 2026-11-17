@@ -74,7 +74,7 @@ jobs:
           CHECK_TIMEOUT: ${{ github.event.inputs.timeout || '25' }}
           MAX_CHECK_NODES: ${{ github.event.inputs.max_nodes || '0' }}
           MIN_SUCCESS_RATIO: '0.05'
-          HOSTS_ENTRY: '104.19.2.253:2096'
+          HOSTS_ENTRY: '104.16.205.232:443'
           OPTIMAL_API: ''
           MAX_RESIDENTIAL_PER_COUNTRY: '3'
           MAX_DATACENTER_PER_COUNTRY: '0'
@@ -96,7 +96,7 @@ jobs:
           root = Path('public')
           data = json.loads((root / 'data.json').read_text())
           worker = os.environ['CHECK_WORKER']
-          entry = '104.19.2.253:2096'
+          entries = ['104.16.205.232:443', '104.17.138.225:2053', '104.19.2.253:2096']
           preferred_japan = 'vpn864205373.opengw.net'
           
           def verify(node):
@@ -145,13 +145,14 @@ jobs:
           for node in selected:
               code = node['country_code']
               numbered[code] = numbered.get(code, 0) + 1
+              entry = entries[(numbered[code] - 1) % len(entries)]
               lines.append(f"{entry}#{names[code]}-住宅备用-{numbered[code]:02d}$sstp://vpn:vpn@{node['host']}:{node['port']}")
           (root / 'nodes.txt').write_text('\n'.join(lines) + '\n')
-          policy = {'countries':counts, 'nodes':len(lines), 'checker_repeats':3,
+          policy = {'countries':counts, 'nodes':len(lines), 'checker_repeats':3, 'ingress_pool':entries,
                     'note':'Free shared backups. Checker duration is not client RTT; stable sub-400ms is not guaranteed.'}
           data['subscription_policy'] = policy
           (root / 'data.json').write_text(json.dumps(data, ensure_ascii=False))
-          summary = f"\n### Residential backup policy\n\nUS first (max 3), JP or SG (max 3); distinct exit servers, other countries excluded.\n\nPublished: {counts}. Three successful checker samples per node. These checks do not guarantee client RTT below 400 ms.\n"
+          summary = f"\n### Residential backup policy\n\nUS first (max 3), JP or SG (max 3); distinct exit servers and alternate tested ingress addresses, other countries excluded.\n\nPublished: {counts}. Three successful checker samples per node. These checks do not guarantee client RTT below 400 ms.\n"
           print(summary)
           if os.environ.get('GITHUB_STEP_SUMMARY'):
               with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as stream:
