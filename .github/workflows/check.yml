@@ -8,6 +8,9 @@ name: VPN Gate Node Check
 #     - cron: '*/30 * * * *'
 
 on:
+  push:
+    paths:
+      - '.github/workflows/check.yml'
   schedule:
     - cron: '17,47 * * * *'
   workflow_dispatch:
@@ -31,7 +34,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: gate-check
+  group: gate-residential-refresh
   cancel-in-progress: false
 
 jobs:
@@ -73,9 +76,29 @@ jobs:
           MIN_SUCCESS_RATIO: '0.05'
           HOSTS_ENTRY: 'www.mfyx.cn:443'
           OPTIMAL_API: ''
-          MAX_RESIDENTIAL_PER_COUNTRY: '5'
+          MAX_RESIDENTIAL_PER_COUNTRY: '3'
           MAX_DATACENTER_PER_COUNTRY: '0'
         run: python vpngate.py
+
+      - name: Filter slow residential subscription nodes
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('public')
+          data = json.loads((root / 'data.json').read_text())
+          allowed = set()
+          for country in data['countries'].values():
+              for node in country['nodes']:
+                  delay = node.get('latency_ms')
+                  if node.get('residential') == 'residential' and isinstance(delay, (int, float)) and 0 < delay <= 5000:
+                      allowed.add(f"sstp://vpn:vpn@{node['host']}:{node['port']}")
+          lines = [line for line in (root / 'nodes.txt').read_text().splitlines() if line.partition('$')[2] in allowed][:12]
+          if not lines:
+              raise SystemExit('No residential nodes passed quality checks; keep previous deployment')
+          (root / 'nodes.txt').write_text('\n'.join(lines) + '\n')
+          print(f'Published {len(lines)} residential nodes: max 3/country, checker latency <= 5000 ms')
+          PY
 
       - name: Ensure GitHub Pages is enabled
         env:
