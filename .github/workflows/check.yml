@@ -74,7 +74,7 @@ jobs:
           CHECK_TIMEOUT: ${{ github.event.inputs.timeout || '25' }}
           MAX_CHECK_NODES: ${{ github.event.inputs.max_nodes || '0' }}
           MIN_SUCCESS_RATIO: '0.05'
-          HOSTS_ENTRY: 'www.mfyx.cn:443'
+          HOSTS_ENTRY: '172.64.150.84:443'
           OPTIMAL_API: ''
           MAX_RESIDENTIAL_PER_COUNTRY: '3'
           MAX_DATACENTER_PER_COUNTRY: '0'
